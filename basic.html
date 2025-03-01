@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Data Marketplace</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .listing {
+            border: 1px solid #ddd;
+            padding: 15px;
+            margin-bottom: 15px;
+            border-radius: 5px;
+        }
+        .listing h3 {
+            margin-top: 0;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        #purchasedData {
+            margin-top: 30px;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            display: none;
+        }
+        .error {
+            color: red;
+            margin: 10px 0;
+        }
+        .success {
+            color: green;
+            margin: 10px 0;
+        }
+        #connectWallet {
+            margin-bottom: 20px;
+        }
+        #userAddress {
+            font-weight: bold;
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Data Marketplace</h1>
+    
+    <button id="connectWallet">Connect Wallet</button>
+    <div id="userAddress"></div>
+    
+    <div id="status"></div>
+    
+    <h2>Available Listings</h2>
+    <div id="listings"></div>
+    
+    <div id="purchasedData">
+        <h2>Purchased Data</h2>
+        <pre id="dataContent"></pre>
+    </div>
+    
+    <script src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.umd.min.js"></script>
+    <script>
+        // Contract ABI - only the functions we need
+        const contractABI = [
+            "function purchaseData(uint256 _listingId) external payable",
+            "function getListingDetails(uint256 _listingId) external view returns (address seller, uint256 price, string memory description, bool active)",
+            "event DataPurchased(uint256 indexed listingId, address indexed buyer, address indexed seller, uint256 price)"
+        ];
+        
+        const CONTRACT_ADDRESS = "0x9a2D3D185E99F125f1663D959F0c5822c878aaEf";
+        const API_URL = "http://localhost:3005"; // Adjust to match your server port
+        
+        // Create mock data for testing when API is not accessible
+        const MOCK_LISTINGS = [
+            {
+                id: 1,
+                seller: "0x1234567890123456789012345678901234567890",
+                price: "0.01",
+                description: "Sample Data Listing 1"
+            },
+            {
+                id: 2,
+                seller: "0x0987654321098765432109876543210987654321",
+                price: "0.05",
+                description: "Sample Data Listing 2"
+            }
+        ];
+        
+        let provider;
+        let signer;
+        let contract;
+        let userAddress;
+        
+        async function init() {
+            try {
+                // Check if MetaMask is installed
+                if (window.ethereum) {
+                    provider = new ethers.providers.Web3Provider(window.ethereum);
+                    
+                    document.getElementById('connectWallet').addEventListener('click', connectWallet);
+                    
+                    // Load listings regardless of wallet connection
+                    await loadListings();
+                } else {
+                    showStatus("Please install MetaMask to use this application", "error");
+                }
+            } catch (error) {
+                console.error("Initialization error:", error);
+                showStatus("Failed to initialize: " + error.message, "error");
+            }
+        }
+        
+        async function connectWallet() {
+            try {
+                // Request account access
+                await provider.send("eth_requestAccounts", []);
+                signer = provider.getSigner();
+                userAddress = await signer.getAddress();
+                
+                // Initialize contract with signer
+                contract = new ethers.Contract(CONTRACT_ADDRESS, contractABI, signer);
+                
+                document.getElementById('userAddress').textContent = `Connected: ${userAddress}`;
+                showStatus("Wallet connected successfully", "success");
+                
+                // Reload listings after wallet connection
+                await loadListings();
+            } catch (error) {
+                console.error("Connection error:", error);
+                showStatus("Failed to connect wallet: " + error.message, "error");
+            }
+        }
+        
+        async function loadListings() {
+            try {
+                // Try to fetch from API first
+                try {
+                    const response = await fetch(`${API_URL}/marketplace/listings`);
+                    const data = await response.json();
+                    
+                    if (data.success) {
+                        displayListings(data.listings);
+                        return;
+                    }
+                } catch (apiError) {
+                    console.warn("API fetch failed, using mock data:", apiError);
+                    // Fall back to mock data if API fetch fails
+                    displayListings(MOCK_LISTINGS);
+                    showStatus("Using mock data (API connection failed)", "error");
+                }
+            } catch (error) {
+                console.error("Error loading listings:", error);
+                showStatus("Failed to load listings: " + error.message, "error");
+            }
+        }
+        
+        function displayListings(listings) {
+            const listingsContainer = document.getElementById('listings');
+            listingsContainer.innerHTML = '';
+            
+            if (listings.length === 0) {
+                listingsContainer.innerHTML = '<p>No listings available</p>';
+                return;
+            }
+            
+            listings.forEach(listing => {
+                const listingElement = document.createElement('div');
+                listingElement.className = 'listing';
+                listingElement.innerHTML = `
+                    <h3>${listing.description}</h3>
+                    <p><strong>ID:</strong> ${listing.id}</p>
+                    <p><strong>Seller:</strong> ${listing.seller}</p>
+                    <p><strong>Price:</strong> ${listing.price} BTC</p>
+                    <button class="purchaseBtn" data-id="${listing.id}" data-price="${listing.price}">Purchase</button>
+                `;
+                listingsContainer.appendChild(listingElement);
+            });
+            
+            // Add event listeners to purchase buttons
+            document.querySelectorAll('.purchaseBtn').forEach(button => {
+                button.addEventListener('click', handlePurchase);
+            });
+        }
+        
+        async function handlePurchase(event) {
+            if (!userAddress) {
+                showStatus("Please connect your wallet first", "error");
+                return;
+            }
+            
+            const listingId = event.target.getAttribute('data-id');
+            const price = event.target.getAttribute('data-price');
+            
+            try {
+                showStatus("Initiating purchase...", "");
+                
+                // Convert price to wei
+                const priceInWei = ethers.utils.parseEther(price);
+                
+                // Call the contract's purchaseData function
+                const tx = await contract.purchaseData(listingId, {
+                    value: priceInWei
+                });
+                
+                showStatus("Transaction submitted, waiting for confirmation...", "");
+                
+                // Wait for transaction to be mined
+                const receipt = await tx.wait();
+                
+                showStatus("Purchase successful! Transaction hash: " + tx.hash, "success");
+                
+                // Fetch the purchased data
+                await fetchPurchasedData(listingId);
+            } catch (error) {
+                console.error("Purchase error:", error);
+                showStatus("Purchase failed: " + error.message, "error");
+            }
+        }
+        
+        async function fetchPurchasedData(listingId) {
+            try {
+                const response = await fetch(`${API_URL}/marketplace/data/${listingId}?address=${userAddress}`);
+                const data = await response.json();
+                
+                if (data.success) {
+                    const dataContainer = document.getElementById('purchasedData');
+                    const dataContent = document.getElementById('dataContent');
+                    
+                    dataContainer.style.display = 'block';
+                    
+                    if (data.submissions && data.submissions.length > 0) {
+                        dataContent.textContent = JSON.stringify(data.submissions, null, 2);
+                    } else {
+                        dataContent.textContent = "No data found for this listing";
+                    }
+                } else {
+                    showStatus("Failed to fetch purchased data: " + data.error, "error");
+                }
+            } catch (error) {
+                console.error("Error fetching purchased data:", error);
+                showStatus("Failed to fetch purchased data: " + error.message, "error");
+            }
+        }
+        
+        function showStatus(message, type) {
+            const statusElement = document.getElementById('status');
+            statusElement.textContent = message;
+            statusElement.className = type || "";
+        }
+        
+        // Initialize the application
+        document.addEventListener('DOMContentLoaded', init);
+    </script>
+</body>
+</html> 

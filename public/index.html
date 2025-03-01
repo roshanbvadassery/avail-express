@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Data Marketplace</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;700&display=swap');
+        
+        body {
+            font-family: 'Orbitron', sans-serif;
+            background-color: #0a0a1f;
+            background-image: 
+                linear-gradient(45deg, #ff00ff0d 25%, transparent 25%),
+                linear-gradient(-45deg, #00ffff0d 25%, transparent 25%);
+            background-size: 4px 4px;
+        }
+
+        .neon-border {
+            box-shadow: 0 0 5px #0ff,
+                       0 0 10px #0ff,
+                       0 0 15px #0ff;
+        }
+
+        .neon-text {
+            text-shadow: 0 0 5px #0ff,
+                        0 0 10px #0ff;
+        }
+
+        .cyberpunk-card {
+            background: rgba(16, 16, 35, 0.9);
+            border: 1px solid #00ffff;
+            backdrop-filter: blur(4px);
+        }
+
+        #listDataModal {
+            z-index: 50;
+        }
+    </style>
+    <!-- Add CryptoJS library -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
+</head>
+<body class="text-cyan-400 min-h-screen p-4">
+    <div class="max-w-6xl mx-auto">
+        <h1 class="text-4xl font-bold mb-8 text-center neon-text">DATA MARKETs</h1>
+        
+        <div class="mb-8 flex justify-between items-center">
+            <div class="flex items-center gap-4">
+                <button id="connectWallet" class="bg-purple-700 hover:bg-purple-600 text-white px-6 py-3 rounded-lg 
+                    transform hover:scale-105 transition-all duration-200 neon-border">
+                    Connect Wallet
+                </button>
+                <div id="walletStatus" class="hidden items-center gap-2">
+                    <span class="inline-block w-2 h-2 bg-green-500 rounded-full"></span>
+                    <span id="userAddress" class="text-white font-mono"></span>
+                </div>
+            </div>
+            <button id="openListDataModal" class="bg-cyan-600 hover:bg-cyan-500 text-white px-6 py-3 rounded-lg 
+                transform hover:scale-105 transition-all duration-200 neon-border">
+                List New Data
+            </button>
+        </div>
+        
+        <div id="status" class="mb-6 p-4 rounded-lg hidden"></div>
+        
+        <!-- List Data Modal -->
+        <div id="listDataModal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center">
+            <div class="cyberpunk-card rounded-lg p-6 max-w-2xl w-full mx-4">
+                <div class="flex justify-between items-center mb-6">
+                    <h2 class="text-2xl font-bold neon-text">LIST NEW DATA</h2>
+                    <button id="closeListDataModal" class="text-cyan-300 hover:text-cyan-100">&times;</button>
+                </div>
+                <form id="listDataForm" class="space-y-4">
+                    <div>
+                        <label class="block text-white text-cyan-300 mb-2">Data Content</label>
+                        <textarea id="dataContent" class="w-full bg-gray-900 text-white text-cyan-300 rounded p-3 border border-cyan-700" rows="4" required></textarea>
+                    </div>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-white text-cyan-300 mb-2">App ID</label>
+                            <input type="number" id="appId" class="w-full text-white bg-gray-900 text-cyan-300 rounded p-3 border border-cyan-700" required>
+                        </div>
+                        <div>
+                            <label class="block text-white text-cyan-300 mb-2">Price (BTC)</label>
+                            <input type="number" id="price" step="0.0001" class="w-full text-white bg-gray-900 text-cyan-300 rounded p-3 border border-cyan-700" required>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-white text-cyan-300 mb-2">Description</label>
+                        <input type="text" id="description" class="w-full bg-gray-900 text-white text-cyan-300 rounded p-3 border border-cyan-700" required>
+                    </div>
+                    <button type="submit" class="w-full bg-purple-700 hover:bg-purple-600 text-white px-6 py-3 rounded-lg 
+                        transform hover:scale-105 transition-all duration-200 neon-border">
+                        LIST DATA
+                    </button>
+                </form>
+            </div>
+        </div>
+        
+        <h2 class="text-2xl font-bold mb-6 neon-text">AVAILABLE LISTINGS</h2>
+        <div id="listings" class="grid gap-6 md:grid-cols-2 lg:grid-cols-3"></div>
+        
+        <div id="purchasedData" class="mt-12 hidden">
+            <h2 class="text-2xl font-bold mb-6 neon-text">PURCHASED DATA</h2>
+            <div class="cyberpunk-card rounded-lg p-6">
+                <pre id="purchasedDataContent" class="font-mono text-sm text-green-400 overflow-x-auto"></pre>
+            </div>
+        </div>
+    </div>
+    
+    <script src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.umd.min.js"></script>
+    <script>
+        // Contract ABI - only the functions we need
+        const contractABI = [
+            "function purchaseData(uint256 _listingId) external payable",
+            "function getListingDetails(uint256 _listingId) external view returns (address seller, uint256 price, string memory description, bool active)",
+            "event DataPurchased(uint256 indexed listingId, address indexed buyer, address indexed seller, uint256 price)"
+        ];
+        
+        const CONTRACT_ADDRESS = "0x9a2D3D185E99F125f1663D959F0c5822c878aaEf";
+        const API_URL = "http://localhost:3005"; // Adjust to match your server port
+        
+        // Create mock data for testing when API is not accessible
+        const MOCK_LISTINGS = [
+            {
+                id: 1,
+                seller: "0x1234567890123456789012345678901234567890",
+                price: "0.01",
+                description: "Sample Data Listing 1"
+            },
+            {
+                id: 2,
+                seller: "0x0987654321098765432109876543210987654321",
+                price: "0.05",
+                description: "Sample Data Listing 2"
+            }
+        ];
+        
+        let provider;
+        let signer;
+        let contract;
+        let userAddress;
+        
+        // Add encryption configuration
+        const ENCRYPTION_KEY = 'TURINGCOMPLETE'; // Replace with your actual key
+        
+        // Add encryption/decryption functions
+        function encryptData(data) {
+            return CryptoJS.AES.encrypt(data, ENCRYPTION_KEY).toString();
+        }
+        
+        function decryptData(encryptedData) {
+            const bytes = CryptoJS.AES.decrypt(encryptedData, ENCRYPTION_KEY);
+            return bytes.toString(CryptoJS.enc.Utf8);
+        }
+        
+        async function init() {
+            try {
+                if (window.ethereum) {
+                    provider = new ethers.providers.Web3Provider(window.ethereum);
+                    document.getElementById('connectWallet').addEventListener('click', connectWallet);
+                    setupModalControls();
+                    loadListings();
+                } else {
+                    showStatus("Please install MetaMask to use this application", "error");
+                }
+            } catch (error) {
+                console.error("Initialization error:", error);
+                showStatus("Failed to initialize: " + error.message, "error");
+            }
+        }
+        
+        async function connectWallet() {
+            try {
+                await provider.send("eth_requestAccounts", []);
+                signer = provider.getSigner();
+                userAddress = await signer.getAddress();
+                
+                contract = new ethers.Contract(CONTRACT_ADDRESS, contractABI, signer);
+                
+                // Update wallet status display
+                document.getElementById('connectWallet').classList.add('hidden');
+                document.getElementById('walletStatus').classList.remove('hidden');
+                document.getElementById('walletStatus').classList.add('flex');
+                document.getElementById('userAddress').textContent = `${userAddress.substring(0, 6)}...${userAddress.substring(38)}`;
+                showStatus("Wallet connected successfully", "success");
+                
+                await loadListings();
+            } catch (error) {
+                console.error("Connection error:", error);
+                showStatus("Failed to connect wallet: " + error.message, "error");
+            }
+        }
+        
+        async function loadListings() {
+            try {
+                // Try to fetch from API first
+                try {
+                    const response = await fetch(`${API_URL}/marketplace/listings`);
+                    const data = await response.json();
+                    
+                    if (data.success) {
+                        displayListings(data.listings);
+                        return;
+                    }
+                } catch (apiError) {
+                    console.warn("API fetch failed, using mock data:", apiError);
+                    // Fall back to mock data if API fetch fails
+                    displayListings(MOCK_LISTINGS);
+                    showStatus("Using mock data (API connection failed)", "error");
+                }
+            } catch (error) {
+                console.error("Error loading listings:", error);
+                showStatus("Failed to load listings: " + error.message, "error");
+            }
+        }
+        
+        function displayListings(listings) {
+            const listingsContainer = document.getElementById('listings');
+            listingsContainer.innerHTML = '';
+            
+            if (listings.length === 0) {
+                listingsContainer.innerHTML = '<p class="text-center text-gray-400">No listings available</p>';
+                return;
+            }
+            
+            // Sort listings in descending order by ID
+            const sortedListings = [...listings].sort((a, b) => b.id - a.id);
+            
+            sortedListings.forEach(listing => {
+                const listingElement = document.createElement('div');
+                listingElement.className = 'cyberpunk-card rounded-lg p-6 transform hover:scale-105 transition-all duration-200';
+                listingElement.innerHTML = `
+                    <h3 class="text-xl font-bold mb-4 text-purple-400">${listing.description}</h3>
+                    <div class="space-y-2 mb-4">
+                        <p class="font-mono text-white"><span class="text-gray-400">ID:</span> ${listing.id}</p>
+                        <p class="font-mono text-white"><span class="text-gray-400">Seller:</span> ${listing.seller.substring(0, 6)}...${listing.seller.substring(38)}</p>
+                        <p class="font-mono text-white"><span class="text-gray-400">Price:</span> ${listing.price} BTC</p>
+                    </div>
+                    <button class="purchaseBtn w-full bg-cyan-600 hover:bg-cyan-500 text-white px-4 py-2 rounded 
+                        transform hover:scale-105 transition-all duration-200 neon-border"
+                        data-id="${listing.id}" data-price="${listing.price}">
+                        PURCHASE
+                    </button>
+                `;
+                listingsContainer.appendChild(listingElement);
+            });
+            
+            document.querySelectorAll('.purchaseBtn').forEach(button => {
+                button.addEventListener('click', handlePurchase);
+            });
+        }
+        
+        async function handlePurchase(event) {
+            if (!userAddress) {
+                showStatus("Please connect your wallet first", "error");
+                return;
+            }
+            
+            const listingId = event.target.getAttribute('data-id');
+            const price = event.target.getAttribute('data-price');
+            
+            try {
+                showStatus("Initiating purchase...", "");
+                
+                // Convert price to wei
+                const priceInWei = ethers.utils.parseEther(price);
+                
+                // Call the contract's purchaseData function
+                const tx = await contract.purchaseData(listingId, {
+                    value: priceInWei
+                });
+                
+                showStatus("Transaction submitted, waiting for confirmation...", "");
+                
+                // Wait for transaction to be mined
+                const receipt = await tx.wait();
+                
+                showStatus("Purchase successful! Transaction hash: " + tx.hash, "success");
+                
+                // Fetch the purchased data
+                await fetchPurchasedData(listingId);
+            } catch (error) {
+                console.error("Purchase error:", error);
+                showStatus("Purchase failed: " + error.message, "error");
+            }
+        }
+        
+        async function fetchPurchasedData(listingId) {
+            try {
+                const response = await fetch(`${API_URL}/marketplace/data/${listingId}?address=${userAddress}`);
+                const data = await response.json();
+                
+                if (data.success) {
+                    const dataContainer = document.getElementById('purchasedData');
+                    const dataContent = document.getElementById('purchasedDataContent');
+                    
+                    dataContainer.classList.remove('hidden');
+                    
+                    if (data.submissions && data.submissions.length > 0) {
+                        // Decrypt the data before displaying
+                        const decryptedSubmissions = data.submissions.map(submission => ({
+                            ...submission,
+                            data: decryptData(submission.data)
+                        }));
+                        dataContent.textContent = JSON.stringify(decryptedSubmissions, null, 2);
+                    } else {
+                        dataContent.textContent = "No data found for this listing";
+                    }
+                } else {
+                    showStatus("Failed to fetch purchased data: " + data.error, "error");
+                }
+            } catch (error) {
+                console.error("Error fetching purchased data:", error);
+                showStatus("Failed to fetch purchased data: " + error.message, "error");
+            }
+        }
+        
+        function showStatus(message, type) {
+            const statusElement = document.getElementById('status');
+            statusElement.innerHTML = message;
+            statusElement.className = `mb-6 p-4 rounded-lg ${
+                type === 'error' ? 'bg-red-900 text-red-200' :
+                type === 'success' ? 'bg-green-900 text-green-200' :
+                'bg-blue-900 text-blue-200'
+            } border ${
+                type === 'error' ? 'border-red-700' :
+                type === 'success' ? 'border-green-700' :
+                'border-blue-700'
+            }`;
+            statusElement.style.display = 'block';
+        }
+        
+        // Modify handleListData to encrypt data before sending
+        async function handleListData(event) {
+            event.preventDefault();
+            
+            if (!userAddress) {
+                showStatus("Please connect your wallet first", "error");
+                return;
+            }
+            
+            const rawData = document.getElementById('dataContent').value;
+            const encryptedData = encryptData(rawData);
+            
+            const data = {
+                data: encryptedData, // Send encrypted data
+                appId: parseInt(document.getElementById('appId').value),
+                price: document.getElementById('price').value,
+                description: document.getElementById('description').value
+            };
+            
+            try {
+                showStatus("Submitting data to Avail...", "");
+                
+                // Close the modal immediately before the fetch operation
+                closeListDataModal();
+                
+                const response = await fetch(`${API_URL}/list-data`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(data)
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    showStatus("Data listed successfully! Transaction Hash: " + result.txHash, "success");
+                    // Clear form
+                    event.target.reset();
+                    // Reload listings
+                    await loadListings();
+                } else {
+                    throw new Error(result.error);
+                }
+            } catch (error) {
+                console.error("List data error:", error);
+                showStatus("Failed to list data: " + error.message, "error");
+            }
+        }
+        
+        // Add this function to close the modal programmatically
+        function closeListDataModal() {
+            const modal = document.getElementById('listDataModal');
+            modal.classList.remove('flex');
+            modal.classList.add('hidden');
+        }
+        
+        // Add this to your init() function
+        document.getElementById('listDataForm').addEventListener('submit', handleListData);
+        
+        // Add modal control functions
+        function setupModalControls() {
+            const modal = document.getElementById('listDataModal');
+            const openBtn = document.getElementById('openListDataModal');
+            const closeBtn = document.getElementById('closeListDataModal');
+
+            openBtn.addEventListener('click', () => {
+                if (!userAddress) {
+                    showStatus("Please connect your wallet first", "error");
+                    return;
+                }
+                modal.classList.remove('hidden');
+                modal.classList.add('flex');
+            });
+
+            closeBtn.addEventListener('click', () => {
+                modal.classList.remove('flex');
+                modal.classList.add('hidden');
+            });
+
+            // Close modal when clicking outside
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) {
+                    modal.classList.remove('flex');
+                    modal.classList.add('hidden');
+                }
+            });
+        }
+        
+        // Initialize the application
+        document.addEventListener('DOMContentLoaded', init);
+    </script>
+</body>
+</html> 

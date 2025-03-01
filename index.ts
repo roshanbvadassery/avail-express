@@ -5,11 +5,22 @@ import { ethers } from 'ethers';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import cors from 'cors';
 
 dotenv.config();
 
 const app = express();
 app.use(express.json());
+
+// Replace the existing CORS configuration with this
+app.use(cors({
+    origin: '*', // Be more specific in production
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Origin', 'X-Requested-With', 'Content-Type', 'Accept', 'Authorization']
+}));
+
+// Add static file serving - add this near the top with other middleware
+app.use(express.static('public'));
 
 // Initialize SDK
 let sdk: SDK;
@@ -74,12 +85,28 @@ app.post('/list-data', async (req, res) => {
       blockNumber: result.blockNumber
     });
     
-    // Create listing on the marketplace
-    const txResponse = await contract.listData(
+    // Create listing on the marketplace with explicit gas parameters
+    const gasPrice = await provider.getGasPrice();
+    const gasLimit = await contract.estimateGas.listData(
       ethers.utils.parseEther(price.toString()),
       txHashHex,
       blockHashHex,
       description
+    ).catch(async (error) => {
+      // If estimation fails, use a manual gas limit
+      console.log("Gas estimation failed, using manual limit:", error);
+      return ethers.BigNumber.from("500000"); // Manual gas limit
+    });
+
+    const txResponse = await contract.listData(
+      ethers.utils.parseEther(price.toString()),
+      txHashHex,
+      blockHashHex,
+      description,
+      {
+        gasLimit: gasLimit.mul(12).div(10), // Add 20% buffer to estimated gas
+        gasPrice: gasPrice
+      }
     );
     
     const receipt = await txResponse.wait();
@@ -98,7 +125,8 @@ app.post('/list-data', async (req, res) => {
     console.error("Error in /list-data:", error);
     res.status(500).json({ 
       success: false, 
-      error: error instanceof Error ? error.message : 'Unknown error' 
+      error: error instanceof Error ? error.message : 'Unknown error',
+      details: error // Include full error details for debugging
     });
   }
 });
@@ -153,36 +181,69 @@ app.get('/marketplace/data/:listingId', async (req, res) => {
 // Get all marketplace listings
 app.get('/marketplace/listings', async (req, res) => {
   try {
-    const listingCount = await contract.nextListingId();
-    const listings = [];
+    // Add debug headers
+    res.header('X-Debug', 'Reached listings endpoint');
     
-    for (let i = 1; i < listingCount; i++) {
+    // Add console log for debugging
+    console.log('Received request for /marketplace/listings');
+    
+    // Instead of calling nextListingId as a function, we need to find active listings differently
+    // We'll try to fetch listings until we encounter an error or a certain limit
+    const listings = [];
+    let id = 1;
+    const MAX_LISTINGS = 100; // Safety limit to prevent infinite loops
+    
+    while (id <= MAX_LISTINGS) {
       try {
-        const listing = await contract.getListingDetails(i);
+        const listing = await contract.getListingDetails(id);
         if (listing.active) {
           listings.push({
-            id: i,
+            id: id,
             seller: listing.seller,
             price: ethers.utils.formatEther(listing.price),
             description: listing.description
           });
         }
+        id++;
       } catch (e) {
-        // Skip non-existent listings
-        continue;
+        // If we get an error like "Listing does not exist", we've reached the end
+        // or encountered a gap in listing IDs
+        if (id > 1 && listings.length > 0) {
+          // We've found some listings, so we can break
+          break;
+        } else if (id >= MAX_LISTINGS) {
+          // Safety check to prevent infinite loops
+          break;
+        } else {
+          // Try the next ID in case there are gaps
+          id++;
+        }
       }
     }
     
-    res.json({ success: true, listings });
+    // Add debug info to response
+    res.json({ 
+      success: true, 
+      listings,
+      debug: {
+        timestamp: new Date().toISOString(),
+        requestOrigin: req.headers.origin
+      }
+    });
   } catch (error) {
+    console.error("Error in /marketplace/listings:", error);
     res.status(500).json({ 
       success: false, 
-      error: error instanceof Error ? error.message : 'Unknown error' 
+      error: error instanceof Error ? error.message : 'Unknown error',
+      debug: {
+        timestamp: new Date().toISOString(),
+        errorType: error instanceof Error ? error.constructor.name : typeof error
+      }
     });
   }
 });
 
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3005;
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
