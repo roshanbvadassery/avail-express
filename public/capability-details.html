@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Capability Details</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;700&display=swap');
+        
+        body {
+            font-family: 'Orbitron', sans-serif;
+            background-color: #0a0a1f;
+            background-image: 
+                linear-gradient(45deg, #ff00ff0d 25%, transparent 25%),
+                linear-gradient(-45deg, #00ffff0d 25%, transparent 25%);
+            background-size: 4px 4px;
+        }
+
+        .neon-border {
+            box-shadow: 0 0 5px #0ff,
+                       0 0 10px #0ff,
+                       0 0 15px #0ff;
+        }
+
+        .neon-text {
+            text-shadow: 0 0 5px #0ff,
+                        0 0 10px #0ff;
+        }
+
+        .cyberpunk-card {
+            background: rgba(16, 16, 35, 0.9);
+            border: 1px solid #00ffff;
+            backdrop-filter: blur(4px);
+        }
+        
+        .capability-data {
+            background-color: #0c1221;
+            border: 1px solid #1a2e4a;
+            border-radius: 4px;
+            padding: 20px;
+            font-family: 'Courier New', monospace;
+            color: #00ff9d;
+            overflow-x: auto;
+            max-height: 500px;
+            scrollbar-width: thin;
+            scrollbar-color: #00ffff #0c1221;
+        }
+        
+        .capability-data::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        
+        .capability-data::-webkit-scrollbar-track {
+            background: #0c1221;
+        }
+        
+        .capability-data::-webkit-scrollbar-thumb {
+            background-color: #00ffff;
+            border-radius: 4px;
+        }
+        
+        .json-key {
+            color: #9d00ff;
+        }
+        
+        .json-string {
+            color: #00ff9d;
+        }
+        
+        .json-number {
+            color: #ff9d00;
+        }
+        
+        .json-boolean {
+            color: #ff00ff;
+        }
+    </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
+</head>
+<body class="text-cyan-400 min-h-screen p-4">
+    <div class="max-w-6xl mx-auto">
+        <div class="flex justify-between items-center mb-8">
+            <h1 class="text-4xl font-bold neon-text">CAPABILITY DETAILS</h1>
+            <a href="index.html" class="bg-gray-700 hover:bg-gray-600 text-white px-4 py-2 rounded-lg 
+                transform hover:scale-105 transition-all duration-200 neon-border">
+                Back to Marketplace
+            </a>
+        </div>
+        
+        <div class="cyberpunk-card rounded-lg p-6 mb-8">
+            <h2 id="capabilityTitle" class="text-2xl font-bold mb-4 text-purple-400">Loading Capability...</h2>
+            <div class="grid grid-cols-2 gap-4 mb-6">
+                <div>
+                    <p class="text-gray-400">Token ID:</p>
+                    <p id="tokenId" class="font-mono text-white">--</p>
+                </div>
+                <div>
+                    <p class="text-gray-400">Provider:</p>
+                    <p id="provider" class="font-mono text-white">--</p>
+                </div>
+            </div>
+            
+            <!-- Download options section -->
+            <div class="mt-6 border-t border-gray-700 pt-4">
+                <h3 class="text-xl font-bold mb-4 text-purple-400">DOWNLOAD OPTIONS</h3>
+                <div class="flex space-x-4">
+                    <button id="downloadLangchain" class="bg-purple-800 hover:bg-purple-700 text-white px-4 py-2 rounded-lg 
+                        transform hover:scale-105 transition-all duration-200 neon-border">
+                        Download as LangChain Tool
+                    </button>
+                    <button id="downloadEliza" class="bg-pink-800 hover:bg-pink-700 text-white px-4 py-2 rounded-lg 
+                        transform hover:scale-105 transition-all duration-200 neon-border">
+                        Download as Eliza Plugin
+                    </button>
+                </div>
+            </div>
+        </div>
+        
+        <div class="cyberpunk-card rounded-lg p-6">
+            <h3 class="text-xl font-bold mb-4 neon-text">CAPABILITY DATA</h3>
+            <div class="capability-data">
+                <pre id="capabilityData">Loading data...</pre>
+            </div>
+        </div>
+    </div>
+    
+    <script src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.umd.min.js"></script>
+    <script>
+        // Contract ABI - only the functions we need
+        const contractABI = [
+            "function getListingDetails(uint256 _listingId) external view returns (address seller, uint256 price, string memory description, bool active)",
+            "function hasPurchased(address _user, uint256 _listingId) external view returns (bool)"
+        ];
+        
+        const CONTRACT_ADDRESS = "0x9a2D3D185E99F125f1663D959F0c5822c878aaEf";
+        const API_URL = "http://localhost:3005"; // Adjust to match your server port
+        
+        // Add encryption configuration
+        const ENCRYPTION_KEY = 'TURINGCOMPLETE'; // Replace with your actual key
+        
+        // Add encryption/decryption functions
+        function decryptData(encryptedData) {
+            try {
+                const bytes = CryptoJS.AES.decrypt(encryptedData, ENCRYPTION_KEY);
+                return bytes.toString(CryptoJS.enc.Utf8);
+            } catch (error) {
+                console.error("Decryption error:", error);
+                return "Error decrypting data: " + error.message;
+            }
+        }
+        
+        // Generate LangChain tool template
+        function generateLangChainTool(capabilityData, capabilityName) {
+            // Extract relevant data from the capability
+            const description = capabilityData.data ? 
+                JSON.parse(capabilityData.data).description || 'Custom AI capability' : 
+                'Custom AI capability';
+                
+            const parameters = capabilityData.data ? 
+                JSON.parse(capabilityData.data).parameters || [] : 
+                [];
+                
+            // Generate parameter fields for the input model
+            const paramFields = parameters.map(param => 
+                `    ${param.name}: ${param.type || 'str'} = Field(description="${param.description || ''}")`
+            ).join('\n');
+            
+            return `
+from langchain.tools import BaseTool
+from pydantic import BaseModel, Field
+from typing import Optional, Type
+
+class ${capabilityName.replace(/\s+/g, '')}Input(BaseModel):
+${paramFields || '    query: str = Field(description="The input query for the capability")'}
+
+class ${capabilityName.replace(/\s+/g, '')}Tool(BaseTool):
+    name = "${capabilityName.toLowerCase().replace(/\s+/g, '_')}"
+    description = "${description}"
+    args_schema: Type[BaseModel] = ${capabilityName.replace(/\s+/g, '')}Input
+    
+    def _run(self, **kwargs) -> str:
+        """Use the ${capabilityName} capability"""
+        # Implementation details would go here
+        # This is a template - you'll need to implement the actual API call
+        return f"Response from ${capabilityName} capability"
+        
+    async def _arun(self, **kwargs) -> str:
+        """Async implementation of the ${capabilityName} capability"""
+        # Async implementation would go here
+        return self._run(**kwargs)
+`;
+        }
+        
+        // Generate Eliza plugin template
+        function generateElizaPlugin(capabilityData, capabilityName) {
+            // Extract relevant data from the capability
+            const capData = capabilityData.data ? JSON.parse(capabilityData.data) : {};
+            const description = capData.description || 'Custom AI capability';
+            const endpoints = capData.endpoints || [];
+            
+            // Generate OpenAPI spec based on capability endpoints
+            const paths = {};
+            endpoints.forEach(endpoint => {
+                const path = endpoint.path || '/api/capability';
+                const method = endpoint.method?.toLowerCase() || 'post';
+                
+                paths[path] = {
+                    [method]: {
+                        operationId: endpoint.name || `execute${capabilityName.replace(/\s+/g, '')}`,
+                        summary: endpoint.description || `Execute ${capabilityName}`,
+                        parameters: endpoint.parameters?.map(p => ({
+                            name: p.name,
+                            in: p.in || 'query',
+                            description: p.description || '',
+                            required: p.required || false,
+                            schema: { type: p.type || 'string' }
+                        })) || []
+                    }
+                };
+            });
+            
+            const openApiSpec = {
+                openapi: "3.0.1",
+                info: {
+                    title: `${capabilityName} API`,
+                    description: description,
+                    version: "v1"
+                },
+                servers: [
+                    {
+                        url: "https://your-api-url.com",
+                        description: "API server"
+                    }
+                ],
+                paths: Object.keys(paths).length ? paths : {
+                    "/api/capability": {
+                        post: {
+                            operationId: `execute${capabilityName.replace(/\s+/g, '')}`,
+                            summary: `Execute ${capabilityName}`,
+                            requestBody: {
+                                required: true,
+                                content: {
+                                    "application/json": {
+                                        schema: {
+                                            type: "object",
+                                            properties: {
+                                                query: {
+                                                    type: "string",
+                                                    description: "The input query"
+                                                }
+                                            },
+                                            required: ["query"]
+                                        }
+                                    }
+                                }
+                            },
+                            responses: {
+                                "200": {
+                                    description: "Successful response",
+                                    content: {
+                                        "application/json": {
+                                            schema: {
+                                                type: "object",
+                                                properties: {
+                                                    result: {
+                                                        type: "string"
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            };
+            
+            // Create the manifest and OpenAPI spec as separate parts
+            const manifest = {
+                schema_version: "v1",
+                name_for_human: capabilityName,
+                name_for_model: capabilityName.toLowerCase().replace(/\s+/g, '_'),
+                description_for_human: description,
+                description_for_model: `Plugin for accessing the ${capabilityName} capability. Use this when you need to ${description}.`,
+                auth: {
+                    type: "none"
+                },
+                api: {
+                    type: "openapi",
+                    url: "https://your-api-url.com/openapi.yaml",
+                    is_user_authenticated: false
+                },
+                logo_url: "https://your-logo-url.com/logo.png",
+                contact_email: "support@example.com",
+                legal_info_url: "https://example.com/legal"
+            };
+            
+            return `// Eliza Plugin Manifest (save as ai-plugin.json)
+${JSON.stringify(manifest, null, 2)}
+
+// OpenAPI Specification (save as openapi.yaml)
+${JSON.stringify(openApiSpec, null, 2)}`;
+        }
+        
+        // Function to download text as a file
+        function downloadTextAsFile(text, filename) {
+            const blob = new Blob([text], { type: 'text/plain' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+        
+        // Format JSON with syntax highlighting
+        function formatJSON(json) {
+            if (typeof json !== 'string') {
+                json = JSON.stringify(json, null, 2);
+            }
+            
+            return json.replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g, function (match) {
+                let cls = 'json-number';
+                if (/^"/.test(match)) {
+                    if (/:$/.test(match)) {
+                        cls = 'json-key';
+                        match = match.replace(/"/g, '').replace(/:$/, '');
+                        return `<span class="${cls}">"${match}"</span>: `;
+                    } else {
+                        cls = 'json-string';
+                    }
+                } else if (/true|false/.test(match)) {
+                    cls = 'json-boolean';
+                } else if (/null/.test(match)) {
+                    cls = 'json-null';
+                }
+                return `<span class="${cls}">${match}</span>`;
+            });
+        }
+        
+        async function init() {
+            try {
+                // Get the listing ID from URL parameters
+                const urlParams = new URLSearchParams(window.location.search);
+                const listingId = urlParams.get('id');
+                
+                if (!listingId) {
+                    document.getElementById('capabilityData').textContent = 'Error: No capability ID specified';
+                    return;
+                }
+                
+                if (window.ethereum) {
+                    const provider = new ethers.providers.Web3Provider(window.ethereum);
+                    await provider.send("eth_requestAccounts", []);
+                    const signer = provider.getSigner();
+                    const userAddress = await signer.getAddress();
+                    
+                    const contract = new ethers.Contract(CONTRACT_ADDRESS, contractABI, signer);
+                    
+                    // Check if user has purchased this capability
+                    const hasPurchased = await contract.hasPurchased(userAddress, listingId);
+                    
+                    if (!hasPurchased) {
+                        document.getElementById('capabilityData').textContent = 'Error: You have not purchased this capability';
+                        return;
+                    }
+                    
+                    // Get listing details
+                    const listing = await contract.getListingDetails(listingId);
+                    const capabilityName = listing.description;
+                    
+                    // Update UI with listing details
+                    document.getElementById('capabilityTitle').textContent = capabilityName;
+                    document.getElementById('tokenId').textContent = listingId;
+                    document.getElementById('provider').textContent = `${listing.seller.substring(0, 6)}...${listing.seller.substring(38)}`;
+                    
+                    // Fetch capability data
+                    const response = await fetch(`${API_URL}/marketplace/data/${listingId}?address=${userAddress}`);
+                    const data = await response.json();
+                    
+                    let capabilityData = {};
+                    
+                    if (data.success) {
+                        if (data.submissions && data.submissions.length > 0) {
+                            // Process the submissions data
+                            const processedSubmissions = data.submissions.map(submission => {
+                                // Check if data is already decrypted or needs decryption
+                                let processedData = submission.data;
+                                
+                                try {
+                                    // Try to parse as JSON to check if it's already processed
+                                    JSON.parse(processedData);
+                                } catch (e) {
+                                    // If it's not valid JSON, try to decrypt it
+                                    try {
+                                        processedData = decryptData(processedData);
+                                    } catch (decryptError) {
+                                        console.warn("Could not decrypt data:", decryptError);
+                                    }
+                                }
+                                
+                                return {
+                                    ...submission,
+                                    data: processedData
+                                };
+                            });
+                            
+                            capabilityData = processedSubmissions[0]; // Use the first submission for template generation
+                            
+                            // Format JSON with syntax highlighting
+                            document.getElementById('capabilityData').innerHTML = formatJSON(processedSubmissions);
+                            
+                            // Set up download buttons
+                            document.getElementById('downloadLangchain').addEventListener('click', () => {
+                                try {
+                                    let parsedData;
+                                    try {
+                                        parsedData = typeof capabilityData.data === 'string' ? 
+                                            JSON.parse(capabilityData.data) : capabilityData.data;
+                                    } catch (parseError) {
+                                        console.warn("Could not parse capability data, using as string:", parseError);
+                                        parsedData = { description: capabilityName };
+                                    }
+                                    
+                                    const langchainTool = generateLangChainTool(
+                                        {...capabilityData, data: JSON.stringify(parsedData)}, 
+                                        capabilityName
+                                    );
+                                    downloadTextAsFile(langchainTool, `${capabilityName.toLowerCase().replace(/\s+/g, '_')}_langchain_tool.py`);
+                                } catch (error) {
+                                    console.error("Error generating LangChain tool:", error);
+                                    alert("Error generating LangChain tool. See console for details.");
+                                }
+                            });
+                            
+                            document.getElementById('downloadEliza').addEventListener('click', () => {
+                                try {
+                                    let parsedData;
+                                    try {
+                                        parsedData = typeof capabilityData.data === 'string' ? 
+                                            JSON.parse(capabilityData.data) : capabilityData.data;
+                                    } catch (parseError) {
+                                        console.warn("Could not parse capability data, using default values:", parseError);
+                                        parsedData = {};
+                                    }
+                                    
+                                    const elizaPlugin = generateElizaPlugin(
+                                        {...capabilityData, data: JSON.stringify(parsedData)}, 
+                                        capabilityName
+                                    );
+                                    downloadTextAsFile(elizaPlugin, `${capabilityName.toLowerCase().replace(/\s+/g, '_')}_eliza_plugin.txt`);
+                                } catch (error) {
+                                    console.error("Error generating Eliza plugin:", error);
+                                    alert("Error generating Eliza plugin. See console for details.");
+                                }
+                            });
+                        } else {
+                            document.getElementById('capabilityData').textContent = "No data found for this capability";
+                        }
+                    } else {
+                        document.getElementById('capabilityData').textContent = `Error: ${data.error}`;
+                    }
+                } else {
+                    document.getElementById('capabilityData').textContent = 'Error: Please install MetaMask to view capability details';
+                }
+            } catch (error) {
+                console.error("Error loading capability details:", error);
+                document.getElementById('capabilityData').textContent = `Error: ${error.message}`;
+            }
+        }
+        
+        // Initialize the application
+        document.addEventListener('DOMContentLoaded', init);
+    </script>
+</body>
+</html> 
