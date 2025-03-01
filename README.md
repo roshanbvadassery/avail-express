@@ -1,3 +1,6 @@
+Deployed ZKsync Contract address: 0x3C4E5d11A05f9d5C1204eFde4A2963F8f14392B4
+Deployed Optimism Contrct Address: 0xF05B1bE94b9A48918Ac64E8Ee280e076fbE4A8C3
+Deployed ZKsync address
 # Capable ZK Agents
 
 A decentralized marketplace for AI capabilities powered by zero-knowledge proofs on zkSync Era.
@@ -125,3 +128,9 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 - [Avail](https://availproject.org/)
 - [LangChain](https://langchain.com/)
 - [Eliza Framework](https://eliza.com/)
+
+![3](https://github.com/user-attachments/assets/48db8be6-f96d-463c-8fdd-a57ea1035530)
+<img width="1512" alt="Screenshot 2025-02-25 at 6 48 37 PM" src="https://github.com/user-attachments/assets/e4b77c3a-6aa1-4bcd-9430-3156d49a2509" />
+
+
+
