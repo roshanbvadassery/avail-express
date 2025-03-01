@@ -1,0 +1,54 @@
+{
+  "_format": "hh-sol-cache-2",
+  "files": {
+    "/Users/roshanvadassery/Public/Openputer/Projects/availproj/zk-marketplace/contracts/ZKDataMarketplace.sol": {
+      "lastModificationDate": 1740847479844,
+      "contentHash": "ccb3238c78dde38f4225ea869699d217",
+      "sourceName": "contracts/ZKDataMarketplace.sol",
+      "solcConfig": {
+        "version": "0.8.17",
+        "settings": {
+          "optimizer": {
+            "enabled": true,
+            "mode": "3"
+          },
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          },
+          "libraries": {}
+        },
+        "zksolc": {
+          "version": "1.3.13",
+          "compilerSource": "binary",
+          "settings": {
+            "optimizer": {
+              "enabled": true,
+              "mode": "3"
+            },
+            "compilerPath": "/Users/roshanvadassery/Library/Caches/hardhat-nodejs/compilers-v2/zksolc/zksolc-v1.3.13",
+            "missingLibrariesPath": "./.zksolc-libraries-cache/missingLibraryDependencies.json",
+            "areLibrariesMissing": false,
+            "experimental": {},
+            "libraries": {}
+          }
+        }
+      },
+      "imports": [],
+      "versionPragmas": [
+        "^0.8.17"
+      ],
+      "artifacts": [
+        "DataMarketplace"
+      ]
+    }
+  }
+}

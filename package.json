@@ -9,6 +9,7 @@
     "dev": "nodemon --loader ts-node/esm index.ts"
   },
   "dependencies": {
+    "@coinbase/wallet-sdk": "^4.3.0",
     "avail-js-sdk": "^0.4.0",
     "dotenv": "^16.4.7",
     "express": "^4.18.2"
