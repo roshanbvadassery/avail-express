@@ -1,0 +1,23 @@
+{
+  "name": "avail-express-app",
+  "version": "1.0.0",
+  "description": "Express app with Avail integration",
+  "main": "index.ts",
+  "type": "module",
+  "scripts": {
+    "start": "node --loader ts-node/esm index.ts",
+    "dev": "nodemon --loader ts-node/esm index.ts"
+  },
+  "dependencies": {
+    "avail-js-sdk": "^0.4.0",
+    "dotenv": "^16.4.7",
+    "express": "^4.18.2"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.17",
+    "@types/node": "^18.15.11",
+    "nodemon": "^2.0.22",
+    "ts-node": "^10.9.1",
+    "typescript": "^5.0.4"
+  }
+}
