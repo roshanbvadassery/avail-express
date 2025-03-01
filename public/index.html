@@ -140,7 +140,7 @@
             "function hasPurchased(address _user, uint256 _listingId) external view returns (bool)"
         ];
         
-        const CONTRACT_ADDRESS = "0x9a2D3D185E99F125f1663D959F0c5822c878aaEf";
+        const CONTRACT_ADDRESS = "0xF05B1bE94b9A48918Ac64E8Ee280e076fbE4A8C3";
         const API_URL = "http://localhost:3005"; // Adjust to match your server port
         
         // Create mock data for testing when API is not accessible
@@ -331,7 +331,7 @@
                     <div class="space-y-2 mb-4">
                         <p class="font-mono text-white"><span class="text-gray-400">Token ID:</span> ${listing.id}</p>
                         <p class="font-mono text-white"><span class="text-gray-400">Provider:</span> ${listing.seller.substring(0, 6)}...${listing.seller.substring(38)}</p>
-                        <p class="font-mono text-white"><span class="text-gray-400">Price:</span> ${listing.price} BTC</p>
+                        <p class="font-mono text-white"><span class="text-gray-400">Price:</span> ${listing.price} ETH</p>
                     </div>
                     <button class="purchaseBtn w-full bg-cyan-600 hover:bg-cyan-500 text-white px-4 py-2 rounded 
                         transform hover:scale-105 transition-all duration-200 neon-border"
