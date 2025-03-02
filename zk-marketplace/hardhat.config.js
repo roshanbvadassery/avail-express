@@ -1,6 +1,7 @@
 require("@matterlabs/hardhat-zksync-solc");
 require("@matterlabs/hardhat-zksync-deploy");
 require("@matterlabs/hardhat-zksync-verify");
+require("dotenv").config();
 
 /** @type {import('@matterlabs/hardhat-zksync-solc').ZkSyncSolcConfig} */
 module.exports = {
@@ -9,7 +10,7 @@ module.exports = {
     compilerSource: "binary",
     settings: {},
   },
-  defaultNetwork: "zkSyncTestnet",
+  defaultNetwork: "sophonTestnet",
   networks: {
     hardhat: {
       zksync: true,
@@ -32,8 +33,51 @@ module.exports = {
       zksync: true,
       verifyURL: 'https://zksync2-mainnet-explorer.zksync.io/contract_verification'
     },
+    // Add Sophon networks
+    sophonMainnet: {
+      url: "https://rpc.sophon.xyz",
+      ethNetwork: "mainnet",
+      verifyURL: "https://verification-explorer.sophon.xyz/contract_verification",
+      browserVerifyURL: "https://explorer.sophon.xyz/",
+      enableVerifyURL: true,
+      zksync: true,
+      accounts: [process.env.PRIVATE_KEY]
+    },
+    sophonTestnet: {
+      url: "https://rpc.testnet.sophon.xyz",
+      ethNetwork: "sepolia",
+      verifyURL: "https://api-explorer-verify.testnet.sophon.xyz/contract_verification",
+      browserVerifyURL: "https://explorer.testnet.sophon.xyz/",
+      enableVerifyURL: true,
+      zksync: true,
+      accounts: [process.env.PRIVATE_KEY]
+    },
   },
   solidity: {
     version: "0.8.17",
   },
+  etherscan: {
+    apiKey: {
+      sophonTestnet: process.env.ETHERSCAN_SOPHON_API_KEY || "",
+      sophonMainnet: process.env.ETHERSCAN_SOPHON_API_KEY || "",
+    },
+    customChains: [
+      {
+        network: "sophonTestnet",
+        chainId: 531050104,
+        urls: {
+          apiURL: "https://api-testnet.sophscan.xyz/api",
+          browserURL: "https://testnet.sophscan.xyz",
+        },
+      },
+      {
+        network: "sophonMainnet",
+        chainId: 50104,
+        urls: {
+          apiURL: "https://api.sophscan.xyz/api",
+          browserURL: "https://sophscan.xyz",
+        },
+      },
+    ],
+  }
 }; 

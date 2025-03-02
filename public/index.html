@@ -132,15 +132,25 @@
     
     <script src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.umd.min.js"></script>
     <script>
-        // Contract ABI - only the functions we need
+        // Contract ABI - updated to include ERC-20 token functions
         const contractABI = [
-            "function purchaseData(uint256 _listingId) external payable",
+            "function purchaseDataWithToken(uint256 _listingId, uint256 _amount) external",
             "function getListingDetails(uint256 _listingId) external view returns (address seller, uint256 price, string memory description, bool active)",
             "event DataPurchased(uint256 indexed listingId, address indexed buyer, address indexed seller, uint256 price)",
             "function hasPurchased(address _user, uint256 _listingId) external view returns (bool)"
         ];
         
-        const CONTRACT_ADDRESS = "0x3C4E5d11A05f9d5C1204eFde4A2963F8f14392B4";
+        // Add ERC-20 token ABI
+        const tokenABI = [
+            "function approve(address spender, uint256 amount) external returns (bool)",
+            "function allowance(address owner, address spender) external view returns (uint256)",
+            "function balanceOf(address account) external view returns (uint256)",
+            "function symbol() external view returns (string)",
+            "function decimals() external view returns (uint8)"
+        ];
+        
+        const CONTRACT_ADDRESS = "0x9a2D3D185E99F125f1663D959F0c5822c878aaEf";
+        const TOKEN_ADDRESS = "0x50C9f5DF42cd8B06CAd991942a212B33550398DF";
         const API_URL = "http://localhost:3005"; // Adjust to match your server port
         
         // Create mock data for testing when API is not accessible
@@ -162,7 +172,10 @@
         let provider;
         let signer;
         let contract;
+        let tokenContract;
         let userAddress;
+        let tokenSymbol = "TOKEN"; // Default value, will be updated
+        let tokenDecimals = 18; // Default value, will be updated
         
         // Add encryption configuration
         const ENCRYPTION_KEY = 'TURINGCOMPLETE'; // Replace with your actual key
@@ -235,6 +248,15 @@
                     userAddress = await signer.getAddress();
                     
                     contract = new ethers.Contract(CONTRACT_ADDRESS, contractABI, signer);
+                    tokenContract = new ethers.Contract(TOKEN_ADDRESS, tokenABI, signer);
+                    
+                    // Get token details
+                    try {
+                        tokenSymbol = await tokenContract.symbol();
+                        tokenDecimals = await tokenContract.decimals();
+                    } catch (error) {
+                        console.warn("Could not fetch token details:", error);
+                    }
                     
                     // Update wallet status display
                     document.getElementById('connectWallet').classList.add('hidden');
@@ -268,6 +290,15 @@
                 localStorage.setItem('connectedWalletAddress', userAddress);
                 
                 contract = new ethers.Contract(CONTRACT_ADDRESS, contractABI, signer);
+                tokenContract = new ethers.Contract(TOKEN_ADDRESS, tokenABI, signer);
+                
+                // Get token details
+                try {
+                    tokenSymbol = await tokenContract.symbol();
+                    tokenDecimals = await tokenContract.decimals();
+                } catch (error) {
+                    console.warn("Could not fetch token details:", error);
+                }
                 
                 // Update wallet status display
                 document.getElementById('connectWallet').classList.add('hidden');
@@ -331,7 +362,7 @@
                     <div class="space-y-2 mb-4">
                         <p class="font-mono text-white"><span class="text-gray-400">Token ID:</span> ${listing.id}</p>
                         <p class="font-mono text-white"><span class="text-gray-400">Provider:</span> ${listing.seller.substring(0, 6)}...${listing.seller.substring(38)}</p>
-                        <p class="font-mono text-white"><span class="text-gray-400">Price:</span> ${listing.price} ETH</p>
+                        <p class="font-mono text-white"><span class="text-gray-400">Price:</span> ${listing.price} ${tokenSymbol}</p>
                     </div>
                     <button class="purchaseBtn w-full bg-cyan-600 hover:bg-cyan-500 text-white px-4 py-2 rounded 
                         transform hover:scale-105 transition-all duration-200 neon-border"
@@ -359,20 +390,82 @@
             try {
                 showStatus("Initiating capability acquisition...", "");
                 
-                // Convert price to wei
-                const priceInWei = ethers.utils.parseEther(price);
+                // Convert price to token units
+                const priceInTokens = ethers.utils.parseUnits(price, tokenDecimals);
                 
-                // Call the contract's purchaseData function
-                const tx = await contract.purchaseData(listingId, {
-                    value: priceInWei
+                // Check token balance
+                const balance = await tokenContract.balanceOf(userAddress);
+                if (balance.lt(priceInTokens)) {
+                    throw new Error(`Insufficient ${tokenSymbol} balance. You need ${price} ${tokenSymbol}.`);
+                }
+                
+                // Check allowance
+                const allowance = await tokenContract.allowance(userAddress, CONTRACT_ADDRESS);
+                if (allowance.lt(priceInTokens)) {
+                    showStatus(`Approving ${tokenSymbol} for spending...`, "");
+                    
+                    // Setup paymaster parameters for approval transaction
+                    const paymasterParams = utils.getPaymasterParams(
+                        "0x98546B226dbbA8230cf620635a1e4ab01F6A99B2", // Sophon Paymaster address
+                        {
+                            type: "General",
+                            innerInput: new Uint8Array(),
+                        }
+                    );
+                    
+                    // Approve tokens with paymaster
+                    const approveTx = await tokenContract.populateTransaction.approve(
+                        CONTRACT_ADDRESS, 
+                        priceInTokens
+                    );
+                    
+                    const zkProvider = new ethers.providers.JsonRpcProvider(RPC_URL);
+                    const zkWallet = new ethers.Wallet(localStorage.getItem('privateKey') || '', zkProvider);
+                    
+                    const txHandle = await zkWallet.sendTransaction({
+                        ...approveTx,
+                        customData: {
+                            paymasterParams: paymasterParams,
+                            gasPerPubdata: utils.DEFAULT_GAS_PER_PUBDATA_LIMIT,
+                        }
+                    });
+                    
+                    await txHandle.wait();
+                    showStatus(`${tokenSymbol} approved for spending`, "success");
+                }
+                
+                // Setup paymaster parameters for purchase transaction
+                const paymasterParams = utils.getPaymasterParams(
+                    "0x98546B226dbbA8230cf620635a1e4ab01F6A99B2", // Sophon Paymaster address
+                    {
+                        type: "General",
+                        innerInput: new Uint8Array(),
+                    }
+                );
+                
+                // Call the contract's purchaseDataWithToken function with paymaster
+                const purchaseTx = await contract.populateTransaction.purchaseDataWithToken(
+                    listingId,
+                    priceInTokens
+                );
+                
+                const zkProvider = new ethers.providers.JsonRpcProvider(RPC_URL);
+                const zkWallet = new ethers.Wallet(localStorage.getItem('privateKey') || '', zkProvider);
+                
+                const txHandle = await zkWallet.sendTransaction({
+                    ...purchaseTx,
+                    customData: {
+                        paymasterParams: paymasterParams,
+                        gasPerPubdata: utils.DEFAULT_GAS_PER_PUBDATA_LIMIT,
+                    }
                 });
                 
                 showStatus("Transaction submitted, waiting for confirmation...", "");
                 
                 // Wait for transaction to be mined
-                const receipt = await tx.wait();
+                const receipt = await txHandle.wait();
                 
-                showStatus("Capability acquired successfully! Transaction hash: " + tx.hash, "success");
+                showStatus("Capability acquired successfully! Transaction hash: " + txHandle.hash, "success");
                 
                 // Fetch the purchased data
                 await fetchPurchasedData(listingId);

@@ -23,11 +23,29 @@ async function main() {
   const balance = await wallet.getBalance();
   console.log(`Account balance: ${ethers.utils.formatEther(balance)} ETH`);
 
+  // Setup paymaster parameters for Sophon
+  const paymasterParams = utils.getPaymasterParams(
+    "0x98546B226dbbA8230cf620635a1e4ab01F6A99B2", // Sophon Paymaster address
+    {
+      type: "General",
+      innerInput: new Uint8Array(),
+    }
+  );
+
   // Deploy the contract
   console.log("Deploying DataMarketplace...");
   const artifact = await deployer.loadArtifact("DataMarketplace");
   
-  const marketplace = await deployer.deploy(artifact);
+  const marketplace = await deployer.deploy(
+    artifact,
+    [], // constructor arguments (empty in this case)
+    {
+      customData: {
+        paymasterParams: paymasterParams,
+        gasPerPubdata: utils.DEFAULT_GAS_PER_PUBDATA_LIMIT,
+      }
+    }
+  );
   
   console.log(`DataMarketplace deployed to: ${marketplace.address}`);
 

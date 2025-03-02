@@ -6,6 +6,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import cors from 'cors';
+import { Provider, Wallet, utils } from 'zksync-web3';
 
 dotenv.config();
 
@@ -43,10 +44,18 @@ const DataMarketplaceABI = JSON.parse(
 
 // Add contract configuration
 const CONTRACT_ADDRESS = process.env.CONTRACT_ADDRESS;
-const RPC_URL = process.env.ETH_RPC_URL || 'http://localhost:8545';
-const provider = new ethers.providers.JsonRpcProvider(RPC_URL);
-const wallet = new ethers.Wallet(process.env.PRIVATE_KEY || '', provider);
-const contract = new ethers.Contract(CONTRACT_ADDRESS || '', DataMarketplaceABI, wallet);
+const RPC_URL = process.env.ETH_RPC_URL || 'https://rpc.testnet.sophon.xyz';
+const zkProvider = new Provider(RPC_URL);
+const zkWallet = new Wallet(process.env.PRIVATE_KEY || '', zkProvider);
+const contract = new ethers.Contract(CONTRACT_ADDRESS || '', DataMarketplaceABI, zkWallet);
+
+// Add ERC20 token configuration
+const TOKEN_ADDRESS = "0x50C9f5DF42cd8B06CAd991942a212B33550398DF";
+const TOKEN_ABI = [
+  "function approve(address spender, uint256 amount) external returns (bool)",
+  "function allowance(address owner, address spender) external view returns (uint256)",
+  "function balanceOf(address account) external view returns (uint256)"
+];
 
 // Submit data to Avail and create a marketplace listing
 app.post('/list-data', async (req, res) => {
@@ -85,32 +94,52 @@ app.post('/list-data', async (req, res) => {
       blockNumber: result.blockNumber
     });
     
-    // Create listing on the marketplace with explicit gas parameters
-    const gasPrice = await provider.getGasPrice();
-    const gasLimit = await contract.estimateGas.listData(
+    // Setup paymaster parameters for Sophon
+    const paymasterParams = utils.getPaymasterParams(
+      "0x98546B226dbbA8230cf620635a1e4ab01F6A99B2", // Sophon Paymaster address
+      {
+        type: "General",
+        innerInput: new Uint8Array(),
+      }
+    );
+    
+    // Create listing on the marketplace with paymaster
+    const listDataTx = await contract.populateTransaction.listData(
       ethers.utils.parseEther(price.toString()),
       txHashHex,
       blockHashHex,
       description
-    ).catch(async (error) => {
-      // If estimation fails, use a manual gas limit
-      console.log("Gas estimation failed, using manual limit:", error);
-      return ethers.BigNumber.from("500000"); // Manual gas limit
-    });
-
-    const txResponse = await contract.listData(
-      ethers.utils.parseEther(price.toString()),
-      txHashHex,
-      blockHashHex,
-      description,
-      {
-        gasLimit: gasLimit.mul(12).div(10), // Add 20% buffer to estimated gas
-        gasPrice: gasPrice
-      }
     );
     
-    const receipt = await txResponse.wait();
-    const listingId = receipt.events?.find((e: any) => e.event === 'DataListed')?.args?.listingId.toString();
+    // Customize the transaction with paymaster data
+    const txHandle = await zkWallet.sendTransaction({
+      ...listDataTx,
+      customData: {
+        paymasterParams: paymasterParams,
+        gasPerPubdata: utils.DEFAULT_GAS_PER_PUBDATA_LIMIT,
+      }
+    });
+    
+    const receipt = await txHandle.wait();
+    
+    // Handle the events safely with proper type checking
+    let listingId: string | undefined;
+    
+    if (receipt.logs) {
+      // Parse the logs manually to find the DataListed event
+      for (const log of receipt.logs) {
+        try {
+          const parsedLog = contract.interface.parseLog(log);
+          if (parsedLog.name === 'DataListed' && parsedLog.args.listingId) {
+            listingId = parsedLog.args.listingId.toString();
+            break;
+          }
+        } catch (e) {
+          // Skip logs that can't be parsed by this interface
+          continue;
+        }
+      }
+    }
 
     res.json({
       success: true,
