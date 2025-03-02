@@ -23,6 +23,10 @@ async function main() {
   const balance = await wallet.getBalance();
   console.log(`Account balance: ${ethers.utils.formatEther(balance)} ETH`);
 
+  // Token address for payments
+  const TOKEN_ADDRESS = "0x50C9f5DF42cd8B06CAd991942a212B33550398DF";
+  console.log(`Using token address: ${TOKEN_ADDRESS}`);
+
   // Setup paymaster parameters for Sophon
   const paymasterParams = utils.getPaymasterParams(
     "0x98546B226dbbA8230cf620635a1e4ab01F6A99B2", // Sophon Paymaster address
@@ -38,7 +42,7 @@ async function main() {
   
   const marketplace = await deployer.deploy(
     artifact,
-    [], // constructor arguments (empty in this case)
+    [TOKEN_ADDRESS], // Pass token address as constructor argument
     {
       customData: {
         paymasterParams: paymasterParams,
@@ -55,6 +59,7 @@ async function main() {
     await hre.run("verify:verify", {
       address: marketplace.address,
       contract: "contracts/ZKDataMarketplace.sol:DataMarketplace",
+      constructorArguments: [TOKEN_ADDRESS],
     });
     console.log("Contract verified successfully!");
   } catch (error) {

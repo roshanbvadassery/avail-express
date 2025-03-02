@@ -51,8 +51,8 @@
       ]
     },
     "/Users/roshanvadassery/Public/Openputer/Projects/citrea-avail-mcp/zk-marketplace/contracts/ZKDataMarketplace.sol": {
-      "lastModificationDate": 1740931661257,
-      "contentHash": "ccb3238c78dde38f4225ea869699d217",
+      "lastModificationDate": 1740937791823,
+      "contentHash": "e7b051232014bc89189aece9b36a7e70",
       "sourceName": "contracts/ZKDataMarketplace.sol",
       "solcConfig": {
         "version": "0.8.17",
@@ -96,7 +96,8 @@
         "^0.8.17"
       ],
       "artifacts": [
-        "DataMarketplace"
+        "DataMarketplace",
+        "IERC20"
       ]
     }
   }

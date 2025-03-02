@@ -6,7 +6,7 @@ require("dotenv").config();
 /** @type {import('@matterlabs/hardhat-zksync-solc').ZkSyncSolcConfig} */
 module.exports = {
   zksolc: {
-    version: "1.3.13", // Use the latest version
+    version: "1.3.13", // Reverted to older version
     compilerSource: "binary",
     settings: {},
   },
@@ -54,7 +54,7 @@ module.exports = {
     },
   },
   solidity: {
-    version: "0.8.17",
+    version: "0.8.17", // Reverted to match the older zksolc version
   },
   etherscan: {
     apiKey: {

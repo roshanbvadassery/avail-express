@@ -114,7 +114,18 @@
                         transform hover:scale-105 transition-all duration-200 neon-border">
                         Download as Eliza Plugin
                     </button>
+                    <button id="verifyWithZkFetch" class="bg-blue-800 hover:bg-blue-700 text-white px-4 py-2 rounded-lg 
+                        transform hover:scale-105 transition-all duration-200 neon-border">
+                        Verify with zk-fetch
+                    </button>
                 </div>
+            </div>
+        </div>
+        
+        <div id="zkFetchResult" class="mt-6 hidden cyberpunk-card rounded-lg p-6">
+            <h3 class="text-xl font-bold mb-4 text-purple-400">ZK VERIFICATION RESULT</h3>
+            <div class="capability-data">
+                <pre id="zkFetchData">Processing verification...</pre>
             </div>
         </div>
         
@@ -134,7 +145,7 @@
             "function hasPurchased(address _user, uint256 _listingId) external view returns (bool)"
         ];
         
-        const CONTRACT_ADDRESS = "0x9a2D3D185E99F125f1663D959F0c5822c878aaEf";
+        const CONTRACT_ADDRESS = "0x6afB70b9F40567e6d313598D0270B2Fa76190d71";
         const API_URL = "http://localhost:3005"; // Adjust to match your server port
         
         // Add encryption configuration
@@ -343,6 +354,56 @@ ${JSON.stringify(openApiSpec, null, 2)}`;
             });
         }
         
+        // Add zk-fetch verification functionality
+        async function verifyWithZkFetch(capabilityData, capabilityName) {
+            try {
+                document.getElementById('zkFetchResult').classList.remove('hidden');
+                document.getElementById('zkFetchData').innerHTML = 'Generating zero-knowledge proof...';
+                
+                // Instead of looking for a URL, we'll use the capability data itself
+                let dataToVerify;
+                try {
+                    // Get the raw data from the capability
+                    const rawData = typeof capabilityData.data === 'string' ? 
+                        capabilityData.data : JSON.stringify(capabilityData.data);
+                    
+                    // Create a hash of the data to verify its integrity
+                    const dataHash = CryptoJS.SHA256(rawData).toString();
+                    
+                    dataToVerify = { 
+                        capabilityId: document.getElementById('tokenId').textContent,
+                        dataHash: dataHash,
+                        txHash: capabilityData.txHash,
+                        blockHash: capabilityData.blockHash || capabilityData.availBlockHash
+                    };
+                    
+                } catch (error) {
+                    throw new Error(`Could not prepare data for verification: ${error.message}`);
+                }
+                
+                // Call your backend endpoint that uses zk-fetch
+                const response = await fetch(`${API_URL}/verify-with-zkfetch`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(dataToVerify)
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    // Format and display the proof
+                    document.getElementById('zkFetchData').innerHTML = formatJSON(result.proof);
+                } else {
+                    document.getElementById('zkFetchData').innerHTML = `Error: ${result.error}`;
+                }
+            } catch (error) {
+                console.error("Error verifying with zk-fetch:", error);
+                document.getElementById('zkFetchData').innerHTML = `Error: ${error.message}`;
+            }
+        }
+        
         async function init() {
             try {
                 // Get the listing ID from URL parameters
@@ -362,8 +423,29 @@ ${JSON.stringify(openApiSpec, null, 2)}`;
                     
                     const contract = new ethers.Contract(CONTRACT_ADDRESS, contractABI, signer);
                     
+                    console.log("Checking purchase status for listing:", listingId);
+                    console.log("User address:", userAddress);
+                    
                     // Check if user has purchased this capability
-                    const hasPurchased = await contract.hasPurchased(userAddress, listingId);
+                    let hasPurchased = false;
+                    try {
+                        hasPurchased = await contract.hasPurchased(userAddress, listingId);
+                        console.log("Has purchased:", hasPurchased);
+                    } catch (contractError) {
+                        console.warn("Error checking purchase status from contract:", contractError);
+                        
+                        // Fallback: Try to check via API
+                        try {
+                            const response = await fetch(`${API_URL}/user-purchases?address=${userAddress}`);
+                            const data = await response.json();
+                            if (data.success && data.purchases) {
+                                hasPurchased = data.purchases.some(id => id.toString() === listingId.toString());
+                                console.log("Has purchased (API fallback):", hasPurchased);
+                            }
+                        } catch (apiError) {
+                            console.warn("API fallback also failed:", apiError);
+                        }
+                    }
                     
                     if (!hasPurchased) {
                         document.getElementById('capabilityData').textContent = 'Error: You have not purchased this capability';
@@ -371,7 +453,39 @@ ${JSON.stringify(openApiSpec, null, 2)}`;
                     }
                     
                     // Get listing details
-                    const listing = await contract.getListingDetails(listingId);
+                    let listing;
+                    try {
+                        listing = await contract.getListingDetails(listingId);
+                    } catch (error) {
+                        console.warn("Error getting listing details from contract:", error);
+                        
+                        // Fallback: Try to get listing details from API
+                        try {
+                            const response = await fetch(`${API_URL}/marketplace/listings`);
+                            const data = await response.json();
+                            if (data.success) {
+                                const foundListing = data.listings.find(l => l.id.toString() === listingId.toString());
+                                if (foundListing) {
+                                    // Create a structure similar to what the contract would return
+                                    listing = {
+                                        seller: foundListing.seller,
+                                        price: ethers.utils.parseEther(foundListing.price.toString()),
+                                        description: foundListing.description,
+                                        active: true
+                                    };
+                                } else {
+                                    throw new Error("Listing not found");
+                                }
+                            } else {
+                                throw new Error("Failed to fetch listings");
+                            }
+                        } catch (apiError) {
+                            console.error("API fallback for listing details failed:", apiError);
+                            document.getElementById('capabilityData').textContent = 'Error: Could not retrieve capability details';
+                            return;
+                        }
+                    }
+                    
                     const capabilityName = listing.description;
                     
                     // Update UI with listing details
@@ -457,6 +571,28 @@ ${JSON.stringify(openApiSpec, null, 2)}`;
                                 } catch (error) {
                                     console.error("Error generating Eliza plugin:", error);
                                     alert("Error generating Eliza plugin. See console for details.");
+                                }
+                            });
+                            
+                            // Set up zk-fetch verification button - MOVED HERE
+                            document.getElementById('verifyWithZkFetch').addEventListener('click', () => {
+                                try {
+                                    let parsedData;
+                                    try {
+                                        parsedData = typeof capabilityData.data === 'string' ? 
+                                            JSON.parse(capabilityData.data) : capabilityData.data;
+                                    } catch (parseError) {
+                                        console.warn("Could not parse capability data, using as string:", parseError);
+                                        parsedData = { description: capabilityName };
+                                    }
+                                    
+                                    verifyWithZkFetch(
+                                        {...capabilityData, data: JSON.stringify(parsedData)}, 
+                                        capabilityName
+                                    );
+                                } catch (error) {
+                                    console.error("Error initiating zk-fetch verification:", error);
+                                    alert("Error initiating zk-fetch verification. See console for details.");
                                 }
                             });
                         } else {

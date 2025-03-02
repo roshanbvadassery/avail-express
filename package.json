@@ -5,21 +5,30 @@
   "main": "index.ts",
   "type": "module",
   "scripts": {
-    "start": "node --loader ts-node/esm index.ts",
-    "dev": "nodemon --loader ts-node/esm index.ts"
+    "start": "node start.js",
+    "dev": "nodemon --exec node start.js",
+    "download:zk-files": "node node_modules/@reclaimprotocol/zk-symmetric-crypto/lib/scripts/download-files"
   },
   "dependencies": {
     "@coinbase/wallet-sdk": "^4.3.0",
+    "@reclaimprotocol/tls": "^0.0.2",
+    "@reclaimprotocol/zk-fetch": "^0.3.1",
     "avail-js-sdk": "^0.4.0",
+    "cors": "^2.8.5",
     "dotenv": "^16.4.7",
     "express": "^4.18.2",
-    "zksync-web3": "^0.17.1"
+    "zksync-web3": "^0.17.1",
+    "crypto-js": "^4.1.1"
   },
   "devDependencies": {
+    "@types/crypto-js": "^4.1.1",
     "@types/express": "^4.17.17",
     "@types/node": "^18.15.11",
     "nodemon": "^2.0.22",
     "ts-node": "^10.9.1",
     "typescript": "^5.0.4"
+  },
+  "resolutions": {
+    "@reclaimprotocol/tls": "^0.0.2"
   }
 }

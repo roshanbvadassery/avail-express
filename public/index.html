@@ -89,7 +89,7 @@
                         </div>
                         <div>
                             <label class="block text-white text-cyan-300 mb-2">Price (ETH)</label>
-                            <input type="number" id="price" step="0.0001" class="w-full text-white bg-gray-900 text-cyan-300 rounded p-3 border border-cyan-700" required>
+                            <input type="number" id="price" step="0.00000000000000000000000001" class="w-full text-white bg-gray-900 text-cyan-300 rounded p-3 border border-cyan-700" required>
                         </div>
                     </div>
                     <div>
@@ -132,12 +132,13 @@
     
     <script src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.umd.min.js"></script>
     <script>
-        // Contract ABI - updated to include ERC-20 token functions
+        // Contract ABI - updated to include the correct functions
         const contractABI = [
             "function purchaseDataWithToken(uint256 _listingId, uint256 _amount) external",
             "function getListingDetails(uint256 _listingId) external view returns (address seller, uint256 price, string memory description, bool active)",
-            "event DataPurchased(uint256 indexed listingId, address indexed buyer, address indexed seller, uint256 price)",
-            "function hasPurchased(address _user, uint256 _listingId) external view returns (bool)"
+            "function getPurchases() external view returns (uint256[] memory)",
+            "function hasPurchased(address _user, uint256 _listingId) external view returns (bool)",
+            "event DataPurchased(uint256 indexed listingId, address indexed buyer, address indexed seller, uint256 price)"
         ];
         
         // Add ERC-20 token ABI
@@ -149,7 +150,7 @@
             "function decimals() external view returns (uint8)"
         ];
         
-        const CONTRACT_ADDRESS = "0x9a2D3D185E99F125f1663D959F0c5822c878aaEf";
+        const CONTRACT_ADDRESS = "0x6afB70b9F40567e6d313598D0270B2Fa76190d71"; // Make sure this matches your deployed contract
         const TOKEN_ADDRESS = "0x50C9f5DF42cd8B06CAd991942a212B33550398DF";
         const API_URL = "http://localhost:3005"; // Adjust to match your server port
         
@@ -390,82 +391,28 @@
             try {
                 showStatus("Initiating capability acquisition...", "");
                 
-                // Convert price to token units
-                const priceInTokens = ethers.utils.parseUnits(price, tokenDecimals);
+                // For demo purposes, we'll let the server handle everything
+                showStatus("Sending purchase request to server...", "");
                 
-                // Check token balance
-                const balance = await tokenContract.balanceOf(userAddress);
-                if (balance.lt(priceInTokens)) {
-                    throw new Error(`Insufficient ${tokenSymbol} balance. You need ${price} ${tokenSymbol}.`);
-                }
-                
-                // Check allowance
-                const allowance = await tokenContract.allowance(userAddress, CONTRACT_ADDRESS);
-                if (allowance.lt(priceInTokens)) {
-                    showStatus(`Approving ${tokenSymbol} for spending...`, "");
-                    
-                    // Setup paymaster parameters for approval transaction
-                    const paymasterParams = utils.getPaymasterParams(
-                        "0x98546B226dbbA8230cf620635a1e4ab01F6A99B2", // Sophon Paymaster address
-                        {
-                            type: "General",
-                            innerInput: new Uint8Array(),
-                        }
-                    );
-                    
-                    // Approve tokens with paymaster
-                    const approveTx = await tokenContract.populateTransaction.approve(
-                        CONTRACT_ADDRESS, 
-                        priceInTokens
-                    );
-                    
-                    const zkProvider = new ethers.providers.JsonRpcProvider(RPC_URL);
-                    const zkWallet = new ethers.Wallet(localStorage.getItem('privateKey') || '', zkProvider);
-                    
-                    const txHandle = await zkWallet.sendTransaction({
-                        ...approveTx,
-                        customData: {
-                            paymasterParams: paymasterParams,
-                            gasPerPubdata: utils.DEFAULT_GAS_PER_PUBDATA_LIMIT,
-                        }
-                    });
-                    
-                    await txHandle.wait();
-                    showStatus(`${tokenSymbol} approved for spending`, "success");
-                }
-                
-                // Setup paymaster parameters for purchase transaction
-                const paymasterParams = utils.getPaymasterParams(
-                    "0x98546B226dbbA8230cf620635a1e4ab01F6A99B2", // Sophon Paymaster address
-                    {
-                        type: "General",
-                        innerInput: new Uint8Array(),
-                    }
-                );
-                
-                // Call the contract's purchaseDataWithToken function with paymaster
-                const purchaseTx = await contract.populateTransaction.purchaseDataWithToken(
-                    listingId,
-                    priceInTokens
-                );
-                
-                const zkProvider = new ethers.providers.JsonRpcProvider(RPC_URL);
-                const zkWallet = new ethers.Wallet(localStorage.getItem('privateKey') || '', zkProvider);
-                
-                const txHandle = await zkWallet.sendTransaction({
-                    ...purchaseTx,
-                    customData: {
-                        paymasterParams: paymasterParams,
-                        gasPerPubdata: utils.DEFAULT_GAS_PER_PUBDATA_LIMIT,
-                    }
+                const response = await fetch(`${API_URL}/marketplace/purchase-with-approval`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        listingId: listingId,
+                        buyerAddress: userAddress,
+                        price: price
+                    })
                 });
                 
-                showStatus("Transaction submitted, waiting for confirmation...", "");
+                const result = await response.json();
                 
-                // Wait for transaction to be mined
-                const receipt = await txHandle.wait();
+                if (!result.success) {
+                    throw new Error(result.error);
+                }
                 
-                showStatus("Capability acquired successfully! Transaction hash: " + txHandle.hash, "success");
+                showStatus("Capability acquired successfully! Transaction hash: " + result.txHash, "success");
                 
                 // Fetch the purchased data
                 await fetchPurchasedData(listingId);
@@ -624,13 +571,38 @@
         
         // Add this function to load purchased capabilities
         async function loadPurchasedCapabilities() {
-            if (!userAddress) return;
+            if (!userAddress) {
+                console.log("No user address available, can't load purchased capabilities");
+                return;
+            }
+            
+            document.getElementById('viewMyCapabilities').classList.remove('hidden');
             
             const capabilitiesContainer = document.getElementById('purchasedCapabilities');
             capabilitiesContainer.innerHTML = '<p class="text-center text-gray-400 col-span-full">Loading your capabilities...</p>';
             
             try {
-                // Try to fetch from API first
+                // Try to fetch purchases from contract
+                let purchasedIds = [];
+                try {
+                    console.log("Fetching purchases for user:", userAddress);
+                    purchasedIds = await contract.getPurchases();
+                    console.log("Purchased IDs:", purchasedIds);
+                } catch (contractError) {
+                    console.warn("Error fetching purchases from contract:", contractError);
+                    // Fallback: Try to fetch from API instead
+                    try {
+                        const response = await fetch(`${API_URL}/user-purchases?address=${userAddress}`);
+                        const data = await response.json();
+                        if (data.success && data.purchases) {
+                            purchasedIds = data.purchases.map(id => ethers.BigNumber.from(id));
+                        }
+                    } catch (apiError) {
+                        console.warn("API fallback also failed:", apiError);
+                    }
+                }
+                
+                // Try to fetch from API
                 try {
                     const response = await fetch(`${API_URL}/marketplace/listings`);
                     const data = await response.json();
@@ -639,18 +611,29 @@
                         const allListings = data.listings;
                         purchasedCapabilities = [];
                         
-                        // Check each listing to see if the user has purchased it
-                        for (const listing of allListings) {
-                            try {
-                                const hasPurchased = await contract.hasPurchased(userAddress, listing.id);
-                                if (hasPurchased) {
+                        // If we have no purchased IDs, try checking each listing individually
+                        if (purchasedIds.length === 0) {
+                            console.log("No purchases found, checking individual listings...");
+                            for (const listing of allListings) {
+                                try {
+                                    const hasPurchased = await contract.hasPurchased(userAddress, listing.id);
+                                    if (hasPurchased) {
+                                        purchasedCapabilities.push(listing);
+                                    }
+                                } catch (error) {
+                                    console.warn(`Error checking purchase for listing ${listing.id}:`, error);
+                                }
+                            }
+                        } else {
+                            // Filter listings based on purchased IDs
+                            for (const listing of allListings) {
+                                if (purchasedIds.some(id => id.toString() === listing.id.toString())) {
                                     purchasedCapabilities.push(listing);
                                 }
-                            } catch (error) {
-                                console.warn(`Error checking purchase status for listing ${listing.id}:`, error);
                             }
                         }
                         
+                        console.log("Total purchased capabilities:", purchasedCapabilities.length);
                         displayPurchasedCapabilities();
                     }
                 } catch (apiError) {
