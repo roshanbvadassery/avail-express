@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: citrea-avail-mcp
+    env: node
+    buildCommand: npm install && npm run download:zk-files
+    startCommand: npm start
+    envVars:
+      - key: NODE_VERSION
+        value: 18.15.0
+    autoDeploy: true 
